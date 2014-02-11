@@ -1,5 +1,5 @@
 from ode import World, Body, Mass, BallJoint, environment
-from visual import sphere, rate, vector, norm, degrees
+from visual import sphere, rate, vector, norm, degrees, arrow
 
 
 class Quad(object):
@@ -72,6 +72,18 @@ class Quad(object):
         for i, f in enumerate(self.motors_force):
             self.motors[i].addForce(v*f)
 
+        # Add rotational fore to motors
+        rotational_factor = 0.1
+        rforce = self.v2*self.motors_force[0]*rotational_factor
+        self.motors[0].addForce(rforce)
+        rforce = -self.v2*self.motors_force[1]*rotational_factor
+        self.motors[1].addForce(rforce)
+        rforce = self.v1*self.motors_force[2]*rotational_factor
+        self.motors[2].addForce(rforce)
+        rforce = -self.v1*self.motors_force[3]*rotational_factor
+        self.motors[3].addForce(rforce)
+
+
     @property
     def vel(self):
         return self.center.getLinearVel()
@@ -111,7 +123,7 @@ class Sphere(object):
         self.j.setAnchor( body.pos )
 
     def draw(self):
-        self.rbody.pos = self.getPosition()
+        self.pos = self.rbody.pos = self.getPosition()
 
 
 if __name__ == '__main__':

@@ -5,20 +5,16 @@ from quad import Quad
 from utils import set_wii_remote
 
 class Stable(object):
-    P = 4
-    I = 0.8
-    D = 2
 
-    def __init__(self, quad, set_points=(0., 0., 0., 0.), max_force=10, min_force=0.02):
+    def __init__(self, quad, max_force=10, min_force=0.02):
         self.quad = quad
-        # Main set points and pids
-        self.set_point_altitude = 0
-        self.set_points = set_points
-        self.pids = [PID(self.P, self.I, self.D) for p in range(4)]
-        for i, pid in enumerate(self.pids):
-            pid.setPoint(self.set_points[i])
+        # set max and min forces
         self.max_force = max_force
         self.min_force = min_force
+        # Aceleration set points
+        self.set_point_aceleration = 0
+        self.aceleration = PID(4, 0.8, 2)
+        self.aceleration.setPoint(self.set_point_aceleration)
         # Pitch set point
         self.set_point_pitch = 0
         self.pitch = PID(0.02, 0.001, 0.10)
@@ -27,6 +23,15 @@ class Stable(object):
         self.set_point_roll = 0
         self.roll = PID(0.02, 0.001, 0.10)
         self.roll.setPoint(self.set_point_roll)
+        # Yaw set point
+        self.set_point_yaw = 0
+        self.yaw = PID(0.2, 0.001, 1)
+        self.yaw.setPoint(self.set_point_yaw)
+
+    def set_aceleration(self, aceleration):
+        if self.set_point_aceleration != aceleration:
+            self.set_point_aceleration = aceleration
+            self.aceleration(aceleration)
 
     def set_pitch(self, pitch):
         if self.set_point_pitch != pitch:
@@ -38,30 +43,38 @@ class Stable(object):
             self.set_point_roll = roll
             self.roll.setPoint(self.set_point_roll)
 
-    def set_altitude(self, altitude):
-        if self.set_point_altitude != altitude:
-            self.set_point_altitude = altitude
-            for pid in self.pids:
-                pid.setPoint(altitude)
+    def set_yaw(self, yaw):
+        if self.set_point_yaw != yaw:
+            self.set_point_yaw = yaw
+            self.yaw.setPoint(self.set_point_yaw)
 
     def update(self):
         self.quad.pos
         forces = []
-        for i, pid in enumerate(self.pids):
-            force = pid.update(self.quad.vel[1])
-            force = max(self.min_force, force)
-            force = min(self.max_force, force)
-            forces.append(force)
+        # aceleration
+        aforce = self.aceleration.update(self.quad.vel[1])
+        forces = [aforce, aforce, aforce, aforce]
         # pitch
         pforce = self.pitch.update(self.quad.pitch)
-        pforce = max(-2, pforce)
-        pforce = min(2, pforce)
         forces[0] += pforce
+        forces[1] -= pforce
         # roll
         rforce = self.roll.update(self.quad.roll)
-        rforce = max(-2, rforce)
-        rforce = min(2, rforce)
         forces[3] += rforce
+        forces[2] -= rforce
+        # yaw
+        yforce = self.yaw.update(self.quad.yaw)
+        forces[0] += yforce
+        forces[1] += yforce
+        forces[2] -= yforce
+        forces[3] -= yforce
+
+        # Update forces in min and max values
+        for i, force in enumerate(forces):
+            force = max(self.min_force, force)
+            force = min(self.max_force, force)
+            forces[i] = force
+        # set values to quad
         self.quad.motors_force = forces
 
     def step(self):
@@ -83,6 +96,9 @@ if __name__ == '__main__':
 
     quad = Quad(world, pos=(0, 1, 0))
     stable = Stable(quad)
+
+    # Initial noise
+    quad.motors[2].addForce((0.5, 1, 0))
 
     # Do the simulation...
     total_time = 0.0
@@ -117,9 +133,10 @@ if __name__ == '__main__':
                 wm.close()
                 break
             if not wm.state['buttons']:
-                stable.set_altitude(0)
+                stable.set_aceleration(0)
                 stable.set_pitch(0)
                 stable.set_roll(0)
+                stable.set_way(0)
 
         print "%1.2fsec: pos=(%6.3f, %6.3f, %6.3f) vel=(%6.3f, %6.3f, %6.3f) pry=(%6.3f, %6.3f, %6.3f)" % \
               (total_time, quad.pos[0], quad.pos[1], quad.pos[2],

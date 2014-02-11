@@ -2,3 +2,4 @@
 # Optionally install cwiid for your O.S. to use Wii Mote
 # Install pyode for your O.S.
 ipython
+ipdb
