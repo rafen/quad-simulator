@@ -1,5 +1,8 @@
-from ode import World
-from visual import rate, box
+from ode import (
+    World, GeomPlane, Space, JointGroup, collide, ContactJoint
+)
+
+from visual import rate, box, scene
 from pid import PID
 from quad import Quad
 from utils import set_wii_remote
@@ -30,7 +33,8 @@ class Stable(object):
         self.roll = PID(0.02, 0.001, 0.10)
         self.roll.setPoint(self.set_point_roll)
         # Yaw set point
-        self.set_point_yaw = 0
+        self.lock_yaw = True
+        self.set_point_yaw = 90
         self.yaw = PID(0.2, 0.001, 1)
         self.yaw.setPoint(self.set_point_yaw)
 
@@ -57,15 +61,24 @@ class Stable(object):
         forces[3] += rforce
         forces[2] -= rforce
         # yaw
-        yforce = self.yaw.update(self.quad.yaw)
-        forces[0] += yforce
-        forces[1] += yforce
-        forces[2] -= yforce
-        forces[3] -= yforce
+        if self.lock_yaw:
+            yforce = self.yaw.update(self.quad.yaw)
+            forces[0] += yforce
+            forces[1] += yforce
+            forces[2] -= yforce
+            forces[3] -= yforce
 
         self.update_forces(forces)
 
     def apply_commands(self):
+        if self.lock_yaw and self.command_yaw:
+            self.lock_yaw = False
+        if not self.command_yaw and not self.lock_yaw:
+            self.set_point_yaw = self.quad.yaw
+            self.yaw.setPoint(self.set_point_yaw)
+            self.lock_yaw = True
+
+
         if self.set_point_acceleration != self.command_acceleration:
             self.set_point_acceleration = -self.command_acceleration
             self.acceleration.setPoint(self.set_point_acceleration)
@@ -92,15 +105,41 @@ if __name__ == '__main__':
 
     world = World()
     world.setGravity((0, -9.81, 0))
+    space = Space()
+    contactgroup = JointGroup()
 
     # draw floor
-    floor = box(pos=(0, -1, 0), width=1, height=0.01)
+    floor = GeomPlane(space, (0, 1, 0), -1)
+    box(pos=(0, -1, 0), width=2, height=0.01, length=2)
 
-    quad = Quad(world, pos=(0, 1, 0))
+    # Draw Quad
+    quad = Quad(world, space, pos=(0, 0, 0))
+
+    # Init Algorithm
     stable = Stable(quad)
+
+    # stop autoscale of the camera
+    scene.autoscale = False
 
     # Initial noise
     #quad.motors[2].addForce((0.5, 1, 0))
+
+    # Collision callback
+    def near_callback(args, geom1, geom2):
+        """Callback function for the collide() method.
+        This function checks if the given geoms do collide and
+        creates contact joints if they do.
+        """
+        # Check if the objects do collide
+        contacts = collide(geom1, geom2)
+
+        # Create contact joints
+        world, contactgroup = args
+        for c in contacts:
+            c.setBounce(0.2)
+            c.setMu(5000)
+            j = ContactJoint(world, contactgroup, c)
+            j.attach(geom1.getBody(), geom2.getBody())
 
     # Do the simulation...
     total_time = 0.0
@@ -110,10 +149,10 @@ if __name__ == '__main__':
 
         # Control Quad if controls are enabled
         if wm:
-            if wm.state['buttons'] & cwiid.BTN_UP:
-                stable.command_acceleration = 5
-            if wm.state['buttons'] & cwiid.BTN_DOWN:
-                stable.command_acceleration = -5
+            if wm.state['buttons'] & cwiid.BTN_LEFT:
+                stable.command_yaw = 1
+            if wm.state['buttons'] & cwiid.BTN_RIGHT:
+                stable.command_yaw = -1
             if wm.state['buttons'] & cwiid.BTN_1:
                 stable.command_acceleration = 1
             if wm.state['buttons'] & cwiid.BTN_2:
@@ -141,7 +180,13 @@ if __name__ == '__main__':
                         quad.pitch, quad.roll, quad.yaw)
         print "power=(%6.3f, %6.3f, %6.3f, %6.3f)" % (quad.motors_force[0], quad.motors_force[1], quad.motors_force[2], quad.motors_force[3])
 
+        # Detect collisions
+        space.collide((world, contactgroup), near_callback)
         stable.step()
         world.step(dt)
+        contactgroup.empty()
+
+        # point camera to quad
+        scene.center = quad.pos
 
         total_time+=dt

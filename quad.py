@@ -1,14 +1,20 @@
-from ode import World, Body, Mass, BallJoint, environment
-from visual import sphere, rate, vector, norm, degrees, arrow
+from random import random
+from ode import (
+    World, Body, Mass, BallJoint, environment,
+    GeomSphere, GeomPlane, GeomBox, Space,
+    JointGroup, collide, ContactJoint
+)
+from visual import sphere, rate, vector, norm, degrees, box
 
 
 class Quad(object):
-    def __init__(self, world, pos=(0, 0, 0), size=1, motors_force=(0, 0, 0, 0)):
+    def __init__(self, world, space, pos=(0, 0, 0), size=1, motors_force=(0, 0, 0, 0)):
         self.world = world
         self.pos = pos
         x, y, z = pos
         self.size = size
         self.motors_force = motors_force
+        self.motors_noise = [random()/100 for m in range(4)]
 
         # Create the quad inside the world
 
@@ -19,16 +25,16 @@ class Quad(object):
         motor_front_color = (0, 0, 1) # color blue
         motor_roll_color = (0, 1, 0) # color green
         self.motors = [
-            Sphere(world, (x, y, z-arms_distance), motor_size, motor_weight, motor_front_color),
-            Sphere(world, (x, y, z+arms_distance), motor_size, motor_weight),
-            Sphere(world, (x-arms_distance, y, z), motor_size, motor_weight, motor_roll_color),
-            Sphere(world, (x+arms_distance, y, z), motor_size, motor_weight),
+            Sphere(world, space, (x, y, z-arms_distance), motor_size, motor_weight, motor_front_color),
+            Sphere(world, space, (x, y, z+arms_distance), motor_size, motor_weight),
+            Sphere(world, space, (x-arms_distance, y, z), motor_size, motor_weight, motor_roll_color),
+            Sphere(world, space, (x+arms_distance, y, z), motor_size, motor_weight),
         ]
 
         # Center
         center_size = motor_size * 1.5
         center_weight = 0.5
-        self.center = Sphere(world, (x, y, z), center_size, center_weight)
+        self.center = Sphere(world, space, (x, y, z), center_size, center_weight)
 
         # Stick parts together
         self.motors[0].joint(self.motors[1])
@@ -60,27 +66,34 @@ class Quad(object):
         self.v1 = norm(vector(x-cx, y-cy, z-cz))
         x, y, z = self.motors[2].getPosition()
         self.v2 = norm(vector(x-cx, y-cy, z-cz))
-        # Calculate pitch, roll and yaw
+        # Calculate pitch and roll
         self.pitch = 90 - degrees(self.v1.diff_angle(vector(0, 1, 0)))
         self.roll = degrees(self.v2.diff_angle(vector(0, 1, 0))) - 90
-        self.yaw = degrees(self.v1.diff_angle(vector(1, 0, 0))) - 90;
+        # calculate yaw, (this works if the quad is close to a horizontal position)
+        if self.v1.z <= 0:
+            self.yaw = degrees(self.v1.diff_angle(vector(1, 0, 0)))
+        else:
+            self.yaw = 360 - degrees(self.v1.diff_angle(vector(1, 0, 0)))
 
     def update_motors(self):
+        # apply noise to motors to emulate reality
+        m_noise = self.motors_noise
+
         # force of motor should be orthogonal to the quad
         self._set_plane_vectors()
         v = self.v1.cross(self.v2)
         for i, f in enumerate(self.motors_force):
-            self.motors[i].addForce(v*f)
+            self.motors[i].addForce(v*(f+m_noise[i]))
 
         # Add rotational fore to motors
         rotational_factor = 0.1
-        rforce = self.v2*self.motors_force[0]*rotational_factor
+        rforce = self.v2*(self.motors_force[0]+m_noise[0])*rotational_factor
         self.motors[0].addForce(rforce)
-        rforce = -self.v2*self.motors_force[1]*rotational_factor
+        rforce = -self.v2*(self.motors_force[1]+m_noise[1])*rotational_factor
         self.motors[1].addForce(rforce)
-        rforce = self.v1*self.motors_force[2]*rotational_factor
+        rforce = self.v1*(self.motors_force[2]+m_noise[2])*rotational_factor
         self.motors[2].addForce(rforce)
-        rforce = -self.v1*self.motors_force[3]*rotational_factor
+        rforce = -self.v1*(self.motors_force[3]+m_noise[3])*rotational_factor
         self.motors[3].addForce(rforce)
 
 
@@ -88,18 +101,21 @@ class Quad(object):
     def vel(self):
         return self.center.getLinearVel()
 
-
 class Sphere(object):
-    def __init__(self, world, pos, size, mass, color=(0.7, 0.7, 0.7)):
+    def __init__(self, world, space, pos, size, mass, color=(0.7, 0.7, 0.7)):
         self.world = world
         self.pos = pos
         # Create a body inside the world
         self.body = Body(world)
         M = Mass()
-        M.setSphere(2500.0, size)
+        M.setSphere(2500, size)
         M.mass = mass
         self.body.setMass(M)
         self.body.setPosition(pos)
+        if space:
+            # setect colisions
+            self.geom = GeomSphere(space, size)
+            self.geom.setBody(self.body)
         # draw body
         self.rbody = sphere(pos=pos, radius=size, color=color)
 
@@ -126,13 +142,46 @@ class Sphere(object):
         self.pos = self.rbody.pos = self.getPosition()
 
 
+
+######################################
+# Simulation test
+
 if __name__ == '__main__':
     world = World()
     world.setGravity((0, -9.81, 0))
-    quad = Quad(world)
+    world.setERP(0.8)
+    world.setCFM(1E-5)
+    space = Space()
+    contactgroup = JointGroup()
+
+
+    # Set environment
+    floor = GeomPlane(space, (0, 1, 0), -1)
+    box(pos=(0, -1, 0), width=2, height=0.01, length=2)
+
+    quad = Quad(world, space, pos=(0, -0.5, 0))
 
     # set initial state of motors
-    quad.motors_force = (1.81, 1.81, 1.81, 1.80)
+    # quad.motors_noise = (0, 0, 0, 0)
+    quad.motors_force = (1.92, 1.92, 1.92, 1.92)
+
+
+    # Collision callback
+    def near_callback(args, geom1, geom2):
+        """Callback function for the collide() method.
+        This function checks if the given geoms do collide and
+        creates contact joints if they do.
+        """
+        # Check if the objects do collide
+        contacts = collide(geom1, geom2)
+
+        # Create contact joints
+        world, contactgroup = args
+        for c in contacts:
+            c.setBounce(0.2)
+            c.setMu(5000)
+            j = ContactJoint(world, contactgroup, c)
+            j.attach(geom1.getBody(), geom2.getBody())
 
     # Do the simulation...
     total_time = 0.0
@@ -140,10 +189,15 @@ if __name__ == '__main__':
     while True:
         rate(40)
 
-        print "%1.2fsec: pos=(%6.3f, %6.3f, %6.3f) " % \
-              (total_time, quad.pos[0], quad.pos[1], quad.pos[2])
+        print "%1.2fsec: pos=(%6.3f, %6.3f, %6.3f) pry=(%6.3f, %6.3f, %6.3f)" % \
+                (total_time, quad.pos[0], quad.pos[1], quad.pos[2],
+                quad.pitch, quad.roll, quad.yaw)
+        print "power=(%6.3f, %6.3f, %6.3f, %6.3f)" % (quad.motors_force[0], quad.motors_force[1], quad.motors_force[2], quad.motors_force[3])
 
+        # Detect collisions and create contact joints
+        space.collide((world, contactgroup), near_callback)
         quad.step()
         world.step(dt)
+        contactgroup.empty()
 
         total_time+=dt
