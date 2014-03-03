@@ -4,6 +4,13 @@ quad-simulator
 Simple Quad Simulator
 
 
+Videos:
+-------
+
+https://www.youtube.com/watch?v=cRrk4PnvwVA
+https://www.youtube.com/watch?v=DFxQDEwIcsw
+
+
 Running the simulator
 ---------------------
 
