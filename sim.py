@@ -72,31 +72,30 @@ class Simulator(object):
 
     def wii_remote(self):
         if self.wm:
-            with self.wm as wm:
-                if wm.state['buttons'] & cwiid.BTN_LEFT:
-                    self.stable.command_yaw = 1
-                if wm.state['buttons'] & cwiid.BTN_RIGHT:
-                    self.stable.command_yaw = -1
-                if wm.state['buttons'] & cwiid.BTN_1:
-                    self.stable.command_acceleration = 1
-                if wm.state['buttons'] & cwiid.BTN_2:
-                    self.stable.command_acceleration = -1
-                if wm.state['buttons'] & cwiid.BTN_A and wm.state['acc']:
-                    p = (wm.state['acc'][1] - 125.) / 125.
-                    r = (wm.state['acc'][0] - 125.) / 125.
-                    self.stable.command_pitch = -p
-                    self.stable.command_roll = r
-                if wm.state['buttons'] & cwiid.BTN_B and wm.state['acc']:
-                    a = (wm.state['acc'][1] - 125.) / 125.
-                    self.stable.command_acceleration = a * 10
-                if wm.state['buttons'] & cwiid.BTN_HOME:
-                    wm.close()
-                    return True
-                if not wm.state['buttons']:
-                    self.stable.command_pitch = 0
-                    self.stable.command_roll = 0
-                    self.stable.command_yaw = 0
-                    self.stable.command_acceleration = 0
+            if self.wm.state['buttons'] & cwiid.BTN_LEFT:
+                self.stable.command_yaw = 1
+            if self.wm.state['buttons'] & cwiid.BTN_RIGHT:
+                self.stable.command_yaw = -1
+            if self.wm.state['buttons'] & cwiid.BTN_1:
+                self.stable.command_acceleration = 1
+            if self.wm.state['buttons'] & cwiid.BTN_2:
+                self.stable.command_acceleration = -1
+            if self.wm.state['buttons'] & cwiid.BTN_A and self.wm.state['acc']:
+                p = (wm.state['acc'][1] - 125.) / 125.
+                r = (wm.state['acc'][0] - 125.) / 125.
+                self.stable.command_pitch = -p
+                self.stable.command_roll = r
+            if self.wm.state['buttons'] & cwiid.BTN_B and self.wm.state['acc']:
+                a = (wm.state['acc'][1] - 125.) / 125.
+                self.stable.command_acceleration = a * 10
+            if self.wm.state['buttons'] & cwiid.BTN_HOME:
+                self.wm.close()
+                return True
+            if not self.wm.state['buttons']:
+                self.stable.command_pitch = 0
+                self.stable.command_roll = 0
+                self.stable.command_yaw = 0
+                self.stable.command_acceleration = 0
         return False
 
     def print_log(self):
